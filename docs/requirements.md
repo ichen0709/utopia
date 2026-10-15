@@ -31,3 +31,17 @@
 - 前端要用什麼語言和框架
 - Supabase 要怎麼設定
 - 金鑰怎麼產生、要放在哪裡
+
+
+## 新增功能
+在上面的需求之外,這次額外做了下面五項(詳細的設計與分類見 `docs/architecture.md` 1.4):
+- **營火加柴全員同步**:畫面上有一堆營火和「加柴」按鈕,任何人按下,所有人看到的火同步變旺,沒人加就慢慢變小直到熄滅。
+  對應檔案:`supabase/migrations/0004_fire.sql`、`src/components/CampScene.svelte`、`src/components/Campfire.svelte`、`src/shared/fire.ts`
+- **伺服器端發訊頻率限制**:同一個人 10 秒內最多送 5 則訊息,超過由伺服器拒絕,繞過畫面也破解不了。
+  對應檔案:`supabase/migrations/0003_messages.sql`(階段一的模擬版:`src/backend/local/room.ts`)
+- **訊息 30 分鐘由伺服器刪除**:每則訊息 30 分鐘後,伺服器不再提供並定時真的刪除,不只是畫面上藏起來。
+  對應檔案:`supabase/migrations/0001_schema.sql`、`supabase/migrations/0005_cron.sql`
+- **@ 提及與提示音**:輸入 @ 可以選人,有人 @ 我的代號時,該則訊息高亮並發出提示音(可以關閉)。
+  對應檔案:`src/shared/mention.ts`、`src/components/MentionMenu.svelte`、`src/lib/sound.ts`
+- **http/https 安全連結**:訊息裡只有 http、https 開頭的網址可以點,在新分頁開啟,而且新分頁不能控制原本的聊天室。
+  對應檔案:`src/shared/linkify.ts`、`src/components/MessageItem.svelte`
