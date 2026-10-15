@@ -147,3 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Keys and credentials (see docs/architecture.md section 8.4)
+*.pem
+*.key
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.env
+supabase/.branches/
