@@ -1,0 +1,181 @@
+/* 營火聊天室 全站樣式:色彩令牌與基本樣式。數值來自 docs/design.md 第 2 章。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ---------- 深色(預設) ---------- */
+:root {
+  color-scheme: dark light;
+  --page: #04060b;
+  --bg: #0b1020;
+  --bg2: #10172c;
+  --surface: #171e38;
+  --surface2: #222b4e;
+  --line: #323e69;
+  --text: #f4ead6;
+  --soft: #cfc6b4;
+  --muted: #9fa3ba;
+  --ember: #f28a3a;
+  --amber: #f7bd62;
+  --onamber: #1c1108;
+  --own: #40291f;
+  --ownline: #7a4a2c;
+  --mention: #3d3016;
+  --mline: #f7bd62;
+  --danger: #ff9a85;
+  --dangerbg: #3a1f26;
+  --link: #9cc8ff;
+  --scrim: rgba(3, 5, 10, 0.62);
+  --c1: #ff9b85;
+  --c2: #7fd6b0;
+  --c3: #7db8ff;
+  --c4: #c3a4ff;
+  --c5: #e8d56a;
+  --c6: #ff8fb8;
+  --c7: #5ed3d9;
+  --shadow: 0 0 80px rgba(242, 138, 58, 0.12);
+}
+
+/* ---------- 淺色(系統設為淺色時) ---------- */
+@media (prefers-color-scheme: light) {
+  :root {
+    --page: #d9d1bf;
+    --bg: #f7f0e1;
+    --bg2: #efe5cf;
+    --surface: #fffaf0;
+    --surface2: #f0e5ce;
+    --line: #d4c6a8;
+    --text: #2a2016;
+    --soft: #554633;
+    --muted: #5c4e3b;
+    --ember: #a9460c;
+    --amber: #e8761f;
+    --onamber: #1f1408;
+    --own: #fbe0bd;
+    --ownline: #e0b07c;
+    --mention: #ffe2a0;
+    --mline: #b86a00;
+    --danger: #a8321e;
+    --dangerbg: #fde3da;
+    --link: #1f5fae;
+    --scrim: rgba(30, 20, 10, 0.5);
+    --c1: #b0402a;
+    --c2: #1d7a57;
+    --c3: #1f5fae;
+    --c4: #6a3fb5;
+    --c5: #7a6500;
+    --c6: #b02d68;
+    --c7: #0f7a80;
+    --shadow: 0 0 60px rgba(120, 80, 30, 0.18);
+  }
+}
+
+/* ---------- 火熄滅:整頁變暗,但文字色不變 ---------- */
+:root[data-dim] {
+  --page: #020307;
+  --bg: #05070d;
+  --bg2: #080c16;
+  --surface: #0e1426;
+  --surface2: #151c36;
+  --line: #27305a;
+  --own: #33201a;
+  --mention: #33290f;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-dim] {
+    --page: #c9c0ac;
+    --bg: #e0d6c1;
+    --bg2: #d6cbb3;
+    --surface: #efe6d2;
+    --surface2: #e3d7bd;
+    --line: #bfae8c;
+    --muted: #54463a;
+    --own: #f1d3ab;
+    --mention: #f6d98c;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--page);
+  color: var(--text);
+  font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.serif {
+  font-family: 'Noto Serif TC', 'Songti TC', serif;
+}
+
+/* 畫面上每個人的固定顏色 */
+.c1 { color: var(--c1); }
+.c2 { color: var(--c2); }
+.c3 { color: var(--c3); }
+.c4 { color: var(--c4); }
+.c5 { color: var(--c5); }
+.c6 { color: var(--c6); }
+.c7 { color: var(--c7); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 共用按鈕 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  font-weight: 600;
+  line-height: 1;
+  border: 1.5px solid transparent;
+  border-radius: 22px 24px 22px 24px;
+  background: none;
+  text-decoration: none;
+}
+
+.ic {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}

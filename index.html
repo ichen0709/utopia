@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f0e1" media="(prefers-color-scheme: light)" />
+    <meta name="description" content="一個不用登入的匿名聊天室,大家圍著營火聊天。" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2c1 4 5 6 5 11a5 5 0 01-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z' fill='%23f28a3a'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap"
+    />
+    <title>營火聊天室</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // 備用檢查:如果主程式根本沒載入成功(檔案下載失敗、語法錯誤、網路中斷),
+      // 也要顯示一行白話說明,而不是一片黑。主程式啟動成功後會設定 __campfireStarted。
+      (function () {
+        function fail(detail) {
+          var app = document.getElementById('app');
+          if (window.__campfireStarted || !app || app.firstElementChild) return;
+          var box = document.createElement('div');
+          box.setAttribute('role', 'alert');
+          box.setAttribute('data-startup-error', '');
+          box.style.cssText =
+            'box-sizing:border-box;width:calc(100% - 32px);max-width:420px;margin:15vh auto 0;padding:24px;font:16px/1.7 system-ui,sans-serif;' +
+            'color:#f4ead6;background:#171e38;border:1.5px dashed #f7bd62;border-radius:18px 20px 18px 20px;';
+          var title = document.createElement('div');
+          title.textContent = '營火暫時點不起來';
+          title.style.cssText = 'font-size:20px;font-weight:700;margin-bottom:8px;';
+          var help = document.createElement('div');
+          help.textContent = '程式沒有順利啟動。請檢查網路後重新整理頁面;如果還是這樣,請把下面這行錯誤回報給開發者。';
+          var code = document.createElement('code');
+          code.textContent = String(detail || '未知的錯誤');
+          code.style.cssText = 'display:block;margin-top:12px;padding:8px 10px;font:13px/1.5 monospace;color:#cfc6b4;background:#0b1020;border-radius:8px;overflow-wrap:anywhere;';
+          box.appendChild(title);
+          box.appendChild(help);
+          box.appendChild(code);
+          app.appendChild(box);
+          document.documentElement.style.background = '#0b1020';
+          document.body.style.background = '#0b1020';
+        }
+        window.addEventListener(
+          'error',
+          function (e) {
+            var t = e && e.target;
+            if (t && t !== window && t.tagName && t.tagName !== 'SCRIPT') return; // 字型等次要檔案失敗不算
+            fail(t && t.tagName === 'SCRIPT' ? '無法載入程式檔案:' + (t.src || '') : e && e.message);
+          },
+          true,
+        );
+        window.addEventListener('unhandledrejection', function (e) {
+          fail(e && e.reason);
+        });
+        window.setTimeout(function () {
+          fail('程式在 8 秒內沒有啟動');
+        }, 8000);
+      })();
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
