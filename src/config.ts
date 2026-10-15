@@ -1,7 +1,15 @@
 import type { RoomConfig } from './backend/types';
 
-/** 要用哪個後端。階段一固定是 local(瀏覽器內的模擬後端) */
-export const BACKEND: string = import.meta.env.VITE_BACKEND ?? 'local';
+/**
+ * Supabase 的連線設定:專案網址與公開金鑰(sb_publishable_ 開頭那一把)。
+ * 這兩個值本來就是公開的,會被打包進網頁;資料庫密碼、secret key、service_role key 絕對不能放在這裡。
+ * 本機放在 .env,線上放在 GitHub 的 Variables。
+ */
+export const SUPABASE_URL: string = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
+export const SUPABASE_KEY: string = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '').trim();
+
+/** 兩個值都有就用 Supabase,沒有才用瀏覽器內的模擬後端 */
+export const BACKEND: 'supabase' | 'local' = SUPABASE_URL && SUPABASE_KEY ? 'supabase' : 'local';
 
 /** architecture.md 5.1 的預設數值。真正的數值由後端在快照裡回傳,這裡只是預設與模擬後端的來源 */
 export const DEFAULT_ROOM_CONFIG: RoomConfig = {

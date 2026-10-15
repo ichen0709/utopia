@@ -17,5 +17,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // 自動測試一律使用模擬後端,不能連到真正的 Supabase:
+    // 就算本機有 .env,測試也把連線設定清空
+    env: {
+      VITE_SUPABASE_URL: '',
+      VITE_SUPABASE_PUBLISHABLE_KEY: '',
+    },
   },
 });

@@ -109,9 +109,11 @@
   async function submit() {
     if (!canSend) return;
     sending = true;
+    const sent = text;
     try {
-      const ok = await onsend(text);
-      if (ok) {
+      const ok = await onsend(sent);
+      // 送出的期間如果使用者又打了新的字,不能把新打的字清掉
+      if (ok && text === sent) {
         text = '';
         await tick();
         resize();

@@ -1,4 +1,5 @@
-# 每次 push 到 main:跑測試 → 編譯 → 發佈到 GitHub Pages。測試沒過就不發佈。
+# 每次 push 到 main:金鑰檢查 → 型別檢查 → 測試 → 編譯 → 再檢查成品 → 發佈到 GitHub Pages。
+# 任何一步沒過就不發佈。
 # 需要先到 repo 的 Settings → Pages,把 Source 設成「GitHub Actions」(見 docs/architecture.md 12.3)。
 name: Deploy to GitHub Pages
 
@@ -28,6 +29,9 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: 金鑰檢查(repo 裡的檔案)
+        run: bash scripts/check-secrets.sh repo
+
       - name: 安裝套件
         run: npm ci
 
@@ -40,19 +44,15 @@ jobs:
       - name: 編譯
         run: npm run build
         env:
-          # 階段一:使用瀏覽器內的模擬後端,不需要任何金鑰
-          VITE_BACKEND: local
-          # 階段二才需要(放在 repo 的 Settings → Secrets and variables → Actions → Variables,不是 Secrets):
-          # VITE_BACKEND: ${{ vars.VITE_BACKEND }}
-          # VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          # VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          # 這兩個值都是「公開」的:專案網址、公開金鑰(sb_publishable_ 開頭)。
+          # 放在 repo 的 Settings → Secrets and variables → Actions → Variables(不是 Secrets)。
+          # 兩個都有,網站就連到真正的 Supabase;沒設定,就退回階段一的模擬後端。
+          # 資料庫密碼、secret key、service_role key 不需要、也絕對不能放在這裡。
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
-      - name: 確認編譯結果裡沒有不該公開的金鑰字樣
-        run: |
-          if grep -rEIl 'service_role|sb_secret_' dist; then
-            echo "dist 裡出現了不該公開的金鑰字樣,停止發佈"
-            exit 1
-          fi
+      - name: 金鑰檢查(打包後的網頁,會被公開;放行 publishable key)
+        run: bash scripts/check-secrets.sh dist
 
       - uses: actions/upload-pages-artifact@v3
         with:
