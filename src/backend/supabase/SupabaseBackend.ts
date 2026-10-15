@@ -19,6 +19,7 @@ import {
   isMessageRow,
   newSessionId,
   numericId,
+  sanitizeSnapshot,
   toChatError,
   toFire,
   toMessage,
@@ -68,12 +69,29 @@ export class SupabaseBackend implements ChatBackend {
   /** 加入時推送還沒就緒:等它就緒之後,要補做一次完整同步,免得漏掉中間的訊息 */
   private needResyncOnReady = false;
 
-  constructor(url: string, publishableKey: string) {
+  /**
+   * 漏訊息的安全網:畫面已經看到的最大訊息編號。
+   * 每次心跳時,拿資料庫裡「最新一則訊息的編號」來比;資料庫的比較大,而且過了寬限時間推送還沒到,就補同步一次。
+   */
+  private maxSeenId = 0;
+  /** 已經要求過補同步的最大編號(補同步之後,就算那則訊息因為不合格被丟掉,也不會每次心跳都再補一次) */
+  private ackedId = 0;
+  private gapTimer: number | undefined;
+  private readonly gapGraceMs: number;
+
+  /**
+   * @param options.client 測試時可以換成假的連線
+   * @param options.gapGraceMs 發現落差後,等多久讓即時推送自己補上(正常一秒內就會到),預設 1500 毫秒
+   */
+  constructor(url: string, publishableKey: string, options: { client?: SupabaseClient; gapGraceMs?: number } = {}) {
     this.url = url.replace(/\/+$/, '');
     this.key = publishableKey;
-    this.client = createClient(this.url, publishableKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
-    });
+    this.gapGraceMs = options.gapGraceMs ?? 1500;
+    this.client =
+      options.client ??
+      createClient(this.url, publishableKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      });
     let id = session.get(SESSION_KEY);
     if (!id || !UUID_RE.test(id)) {
       id = newSessionId();
@@ -137,6 +155,8 @@ export class SupabaseBackend implements ChatBackend {
     this.joined = false;
     this.hold = false;
     this.buffer = [];
+    window.clearTimeout(this.gapTimer);
+    this.gapTimer = undefined;
     await this.call('leave_room', { p_session_id: this.sessionId });
   }
 
@@ -162,6 +182,8 @@ export class SupabaseBackend implements ChatBackend {
 
   async heartbeat(): Promise<void> {
     await this.call('heartbeat', { p_session_id: this.sessionId });
+    // 心跳成功之後,順便檢查有沒有漏掉的訊息(不等結果,也不會丟出例外)
+    void this.checkGap();
   }
 
   async sendMessage(body: string): Promise<void> {
@@ -222,15 +244,17 @@ export class SupabaseBackend implements ChatBackend {
       this.buffer = [];
     }
     try {
-      const data = (await this.call(fn, args)) as Snapshot | null;
-      if (!data || typeof data !== 'object' || !('serverTime' in data)) {
-        throw new ChatError('UNAVAILABLE', undefined, 'unexpected snapshot');
-      }
+      // 逐項檢查:不合格的訊息、成員直接丟掉,其餘照常;整份不成樣子才當作暫時連不上
+      const data = sanitizeSnapshot(await this.call(fn, args));
+      if (!data) throw new ChatError('UNAVAILABLE', undefined, 'unexpected snapshot');
       if (becomesJoined) this.joined = true;
       this.baseline = {
         maxId: data.messages.reduce((m, x) => Math.max(m, numericId(x.id)), 0),
         fireMs: Date.parse(data.fire.updatedAt),
       };
+      // 重新加入就從快照重算;重連補同步則只會往上加
+      this.maxSeenId = becomesJoined ? this.baseline.maxId : Math.max(this.maxSeenId, this.baseline.maxId);
+      if (becomesJoined) this.ackedId = 0;
       if (track) window.setTimeout(this.flush, 0);
       return data;
     } catch (e) {
@@ -253,7 +277,13 @@ export class SupabaseBackend implements ChatBackend {
         else if (payload.status === 'error') this.onPgDown();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        if (isMessageRow(payload.new)) this.onMessageRow(payload.new);
+        if (isMessageRow(payload.new)) {
+          this.onMessageRow(payload.new);
+        } else {
+          // 不合格的資料列照樣丟掉不顯示,但它的編號算「已經看過」,免得安全網一直以為漏了訊息
+          const id = (payload.new as { id?: unknown } | null)?.id;
+          if (typeof id === 'number' || typeof id === 'string') this.noteSeen(numericId(id));
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fire' }, (payload) => {
         if (isFireRow(payload.new)) {
@@ -282,7 +312,41 @@ export class SupabaseBackend implements ChatBackend {
   }
 
   private deliver(p: Pending): void {
+    if (p.event === 'message.created' && p.messageId !== undefined) this.noteSeen(p.messageId);
     this.emit(p.event as BackendEventName, p.payload as never);
+  }
+
+  private noteSeen(id: number): void {
+    if (id > this.maxSeenId) this.maxSeenId = id;
+  }
+
+  /**
+   * 漏訊息的安全網(每次心跳呼叫一次):
+   *  1. 用最輕量的查詢,只問「資料庫裡最新一則訊息的編號」(一筆、只有 id;權限規則只讓我們讀到還沒過期的訊息)。
+   *  2. 如果比畫面已經看到的最大編號還大,等一小段寬限時間(正常的即時推送一秒內就會到)。
+   *  3. 寬限時間過了還是沒看到,就請畫面補同步一次 —— 和「重連後補同步」「加入後補同步」是同一套:
+   *     發出 connection.restored,畫面收到後呼叫 resync(),重新取得完整快照(逐項檢查、依編號去重、依順序排列)。
+   * 沒有落差時,只有一次輕量查詢,不會做完整同步。任何錯誤都安靜地忽略,不丟出例外、不印 Console。
+   */
+  private async checkGap(): Promise<void> {
+    if (!this.joined || this.hold || this.reportedOffline || this.gapTimer !== undefined) return;
+    let latest = 0;
+    try {
+      const res = await this.client.from('messages').select('id').order('id', { ascending: false }).limit(1).maybeSingle();
+      const id = (res.data as { id?: unknown } | null)?.id;
+      if (res.error || (typeof id !== 'number' && typeof id !== 'string')) return;
+      latest = numericId(id);
+    } catch {
+      return;
+    }
+    if (latest <= Math.max(this.maxSeenId, this.ackedId)) return;
+    this.gapTimer = window.setTimeout(() => {
+      this.gapTimer = undefined;
+      // 寬限時間內推送自己到了,就不用補了
+      if (!this.joined || this.hold || latest <= Math.max(this.maxSeenId, this.ackedId)) return;
+      this.ackedId = latest;
+      this.emit('connection.restored', undefined);
+    }, this.gapGraceMs);
   }
 
   private readonly flush = (): void => {

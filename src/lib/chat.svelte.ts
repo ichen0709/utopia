@@ -35,6 +35,10 @@ const toView = (m: Message): ViewMessage => ({
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** 訊息的順序:先比時間,再比編號(和伺服器的排序一樣) */
+const compareMessages = (a: ViewMessage, b: ViewMessage): number =>
+  a.createdMs - b.createdMs || a.id.localeCompare(b.id, 'en', { numeric: true });
+
 export class ChatStore {
   phase = $state<Phase>('loading');
   connection = $state<'online' | 'offline'>('online');
@@ -107,8 +111,12 @@ export class ChatStore {
     const b = this.backend;
 
     b.on('message.created', (m) => {
+      // 依訊息編號去重;並依「時間、編號」插在正確的位置,補進來的訊息不會亂序
       if (this.phase !== 'room' || this.messages.some((x) => x.id === m.id)) return;
-      this.messages.push(toView(m));
+      const view = toView(m);
+      let at = this.messages.length;
+      while (at > 0 && compareMessages(this.messages[at - 1], view) > 0) at--;
+      this.messages.splice(at, 0, view);
       if (m.kind === 'chat' && m.body && this.me && nicknameKey(m.nickname) !== nicknameKey(this.me)) {
         if (this.soundOn && mentions(m.body, this.me)) playMention();
       }

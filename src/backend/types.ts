@@ -85,6 +85,10 @@ export interface BackendEvents {
   'member.left': { nickname: string };
   'fire.changed': Fire;
   'connection.lost': undefined;
+  /**
+   * 連線恢復,或後端要求畫面「重新同步一次」(加入時推送還沒就緒、心跳發現漏了訊息)。
+   * 畫面收到後一律做同一件事:重新取得完整快照並套用。
+   */
   'connection.restored': undefined;
 }
 
