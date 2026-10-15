@@ -51,10 +51,10 @@
     <svg class="ic" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 4H5v16h4" /><path d="M14 8l4 4-4 4" /><path d="M18 12H9" /></svg>
     離開營火
   </button>
-  <div class="count">
+  <button class="count" type="button" aria-label="開啟線上名單" onclick={() => (panelOpen = true)}>
     <svg class="ic" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6" /><circle cx="17" cy="9" r="2.5" /><path d="M17 14c2.5 0 4.5 2 4.5 5" /></svg>
     目前 <b>{chat.members.length}</b> 人
-  </div>
+  </button>
   <SoundToggle on={chat.soundOn} ontoggle={() => chat.toggleSound()} />
 </header>
 
@@ -88,6 +88,9 @@
   <RosterPanel
     members={chat.members}
     me={chat.me}
+    awayBusy={chat.awayBusy}
+    canToggleAway={!offline}
+    ontoggleaway={() => chat.toggleAway()}
     onclose={() => (panelOpen = false)}
     onpick={(nickname) => {
       panelOpen = false;
@@ -120,9 +123,17 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 14px;
+    background: none;
     font-size: 14px;
     font-weight: 500;
     color: var(--soft);
+  }
+  .count:hover {
+    background: var(--surface);
   }
   .count b {
     color: var(--text);

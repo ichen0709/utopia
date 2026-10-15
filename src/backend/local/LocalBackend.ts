@@ -25,6 +25,7 @@ import {
   leaveRoom,
   markLeavingSoon,
   sendChat,
+  setAway,
   setFireLevel,
   snapshotOf,
   stoke,
@@ -41,6 +42,8 @@ const USER_KEY = 'campfire.userId';
 const SESSION_KEY = 'campfire.sessionId';
 const RECONNECT_DELAY_MS = 1500;
 
+const awayKeyOf = (names: string[]): string => [...names].sort().join('\u0000');
+
 type Handler<K extends BackendEventName> = (payload: BackendEvents[K]) => void;
 
 /** 這個分頁目前「看到」的狀態,用來比較出新增了什麼、少了什麼,再發出事件 */
@@ -48,6 +51,8 @@ interface Seen {
   messageIds: Set<string>;
   memberKeys: Set<string>;
   fireKey: string;
+  /** 目前暫離中的人(排序後用逗號連起來),有變就發 away.changed */
+  awayKey: string;
 }
 
 export class LocalBackend implements ChatBackend {
@@ -140,6 +145,10 @@ export class LocalBackend implements ChatBackend {
     this.commit((db, now) => stoke(db, this.who, now, this.cfg));
   }
 
+  async setAway(away: boolean): Promise<void> {
+    this.commit((db, now) => setAway(db, this.who, away, now, this.cfg));
+  }
+
   async getSnapshot(): Promise<Snapshot> {
     const snap = this.commit((db, now) => {
       cleanup(db, now, this.cfg);
@@ -211,6 +220,7 @@ export class LocalBackend implements ChatBackend {
       messageIds: new Set(snap.messages.map((m) => m.id)),
       memberKeys: new Set(snap.members.map((m) => nicknameKey(m.nickname))),
       fireKey: `${snap.fire.level}|${snap.fire.updatedAt}`,
+      awayKey: awayKeyOf(snap.members.filter((m) => m.away).map((m) => m.nickname)),
     };
   }
 
@@ -238,6 +248,13 @@ export class LocalBackend implements ChatBackend {
       if (!nextMemberKeys.has(key)) this.emit('member.left', { nickname: names.get(key) ?? key });
     }
     seen.memberKeys = nextMemberKeys;
+
+    const awayNames = db.members.filter((m) => m.away).map((m) => m.nickname);
+    const awayKey = awayKeyOf(awayNames);
+    if (awayKey !== seen.awayKey) {
+      seen.awayKey = awayKey;
+      this.emit('away.changed', { nicknames: [...awayNames].sort() });
+    }
 
     const fire = toFire(db.fire);
     const fireKey = `${fire.level}|${fire.updatedAt}`;

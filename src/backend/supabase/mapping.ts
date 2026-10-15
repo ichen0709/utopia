@@ -148,7 +148,8 @@ export function parseSnapshotMessage(v: unknown): Message | null {
 /** 快照裡的一位成員。不合格回傳 null */
 export function parseSnapshotMember(v: unknown): Member | null {
   if (!isRecord(v) || !isNickname(v.nickname) || !isTime(v.joinedAt)) return null;
-  return { nickname: v.nickname, joinedAt: iso(v.joinedAt) };
+  // 暫離標記只認 true;缺少或型別不對(不合格)一律當作沒有暫離,成員本身照常顯示
+  return { nickname: v.nickname, joinedAt: iso(v.joinedAt), away: v.away === true };
 }
 
 /** 快照裡的營火。不合格回傳 null */
@@ -156,6 +157,28 @@ export function parseSnapshotFire(v: unknown): Fire | null {
   if (!isRecord(v) || !isLevel(v.level) || !isTime(v.updatedAt)) return null;
   if (v.lastStokedBy !== null && v.lastStokedBy !== undefined && typeof v.lastStokedBy !== 'string') return null;
   return { level: v.level, updatedAt: iso(v.updatedAt), lastStokedBy: typeof v.lastStokedBy === 'string' ? v.lastStokedBy : null };
+}
+
+// ---------- 暫離名單(room_away 表的即時推送) ----------
+
+/** 暫離名單最多收這麼多個(遠大於實際人數,只是擋掉誇張的資料) */
+const MAX_AWAY = 500;
+
+/** 版本:有限的數字,不小於 0 */
+const isVersion = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+
+/**
+ * 即時推送來的暫離名單資料列(room_away):
+ *  - nicknames 必須是陣列;裡面不合格的項目(不是字串、長度不在 1 到 20 字)丟掉,其餘照常
+ *  - version 必須是不小於 0 的有限數字
+ *  - 整列不成樣子 → 回傳 null(整筆丟掉)
+ * 不會丟出例外,也不會印任何東西。
+ */
+export function parseAwayRow(v: unknown): { nicknames: string[]; version: number } | null {
+  if (!isRecord(v) || !Array.isArray(v.nicknames) || !isVersion(v.version)) return null;
+  const nicknames: string[] = [];
+  for (const n of v.nicknames.slice(0, MAX_AWAY)) if (isNickname(n)) nicknames.push(n);
+  return { nicknames, version: v.version };
 }
 
 /** 規則數值:有效的(有限的正數)才採用,不合格的欄位退回預設值 */
@@ -196,7 +219,8 @@ export function sanitizeSnapshot(v: unknown): Snapshot | null {
     updatedAt: serverTime,
     lastStokedBy: null,
   };
-  return { serverTime, config, me, members, messages, fire };
+  const awayVersion = isVersion(v.awayVersion) ? v.awayVersion : undefined;
+  return { serverTime, config, me, members, ...(awayVersion === undefined ? {} : { awayVersion }), messages, fire };
 }
 
 export function toMessage(row: MessageRow): Message {

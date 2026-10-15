@@ -24,6 +24,8 @@ export interface MemberRow {
   /** 收到「即將離開」的時間;緩衝時間內同一個分頁回來就取消 */
   leavingAt: number | null;
   isBot: boolean;
+  /** 暫離中(只是顯示用的標記,沒有任何規則:不影響心跳與離開判定) */
+  away: boolean;
 }
 
 export interface MessageRow {
@@ -147,6 +149,7 @@ export function joinRoom(db: LocalDb, who: Who, rawNickname: string, now: number
     lastBeatAt: now,
     leavingAt: null,
     isBot: false,
+    away: false,
   });
   // 房間從沒有人變成有人:火回到中等亮度(房間沒人時火的時間不計算)
   if (humansBefore === 0) {
@@ -158,6 +161,12 @@ export function joinRoom(db: LocalDb, who: Who, rawNickname: string, now: number
 export function leaveRoom(db: LocalDb, who: Who, now: number, cfg: RoomConfig): void {
   const me = db.members.find((m) => m.sessionId === who.sessionId);
   if (me) removeMember(db, me, now, cfg);
+}
+
+/** 切換暫離。不產生系統訊息、不更新心跳時間,和離開判定完全無關 */
+export function setAway(db: LocalDb, who: Who, away: boolean, now: number, cfg: RoomConfig): void {
+  cleanup(db, now, cfg);
+  requireMember(db, who).away = away;
 }
 
 export function markLeavingSoon(db: LocalDb, who: Who, now: number): void {
@@ -232,7 +241,7 @@ export function toMessage(m: MessageRow): Message {
 }
 
 export function toMember(m: MemberRow): Member {
-  return { nickname: m.nickname, joinedAt: iso(m.joinedAt) };
+  return { nickname: m.nickname, joinedAt: iso(m.joinedAt), away: m.away === true };
 }
 
 export function toFire(f: FireRow): Fire {

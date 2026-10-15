@@ -19,6 +19,7 @@ import {
   isMessageRow,
   newSessionId,
   numericId,
+  parseAwayRow,
   sanitizeSnapshot,
   toChatError,
   toFire,
@@ -33,12 +34,14 @@ type Handler<K extends BackendEventName> = (payload: BackendEvents[K]) => void;
 
 /** 資料類事件在「取得快照的途中」收到時,先暫存,等畫面套用完快照再補發,才不會漏掉也不會倒退 */
 interface Pending {
-  event: 'message.created' | 'member.joined' | 'member.left' | 'fire.changed';
+  event: 'message.created' | 'member.joined' | 'member.left' | 'fire.changed' | 'away.changed';
   payload: unknown;
   /** 對應的訊息編號(只有來自 messages 的事件有) */
   messageId?: number;
   /** 營火更新時間(只有 fire.changed 有) */
   fireMs?: number;
+  /** 暫離名單的版本(只有 away.changed 有) */
+  awayVersion?: number;
 }
 
 export class SupabaseBackend implements ChatBackend {
@@ -58,7 +61,7 @@ export class SupabaseBackend implements ChatBackend {
 
   private hold = false;
   private buffer: Pending[] = [];
-  private baseline = { maxId: 0, fireMs: 0 };
+  private baseline = { maxId: 0, fireMs: 0, awayVersion: -1 };
 
   private reportedOffline = false;
   private restoreTimer: number | undefined;
@@ -68,6 +71,11 @@ export class SupabaseBackend implements ChatBackend {
   private readyWaiters: Array<() => void> = [];
   /** 加入時推送還沒就緒:等它就緒之後,要補做一次完整同步,免得漏掉中間的訊息 */
   private needResyncOnReady = false;
+  /**
+   * 要不要監聽暫離名單(room_away 表)。如果資料庫還沒執行 0006_away.sql,這張表不在推送名單裡,
+   * 整個頻道都會被拒絕;這時退回「不監聽暫離」重新訂閱,聊天室其他功能完全不受影響。
+   */
+  private awayEnabled = true;
 
   /**
    * 漏訊息的安全網:畫面已經看到的最大訊息編號。
@@ -194,6 +202,11 @@ export class SupabaseBackend implements ChatBackend {
     await this.call('stoke_fire', { p_session_id: this.sessionId });
   }
 
+  /** 切換暫離:只是顯示用的標記,伺服器沒有任何額外規則(不產生系統訊息、不影響心跳與離開判定) */
+  async setAway(away: boolean): Promise<void> {
+    await this.call('set_away', { p_session_id: this.sessionId, p_away: away });
+  }
+
   async getSnapshot(): Promise<Snapshot> {
     return this.snapshotCall('get_snapshot', { p_session_id: this.sessionId }, false);
   }
@@ -251,6 +264,7 @@ export class SupabaseBackend implements ChatBackend {
       this.baseline = {
         maxId: data.messages.reduce((m, x) => Math.max(m, numericId(x.id)), 0),
         fireMs: Date.parse(data.fire.updatedAt),
+        awayVersion: data.awayVersion ?? -1,
       };
       // 重新加入就從快照重算;重連補同步則只會往上加
       this.maxSeenId = becomesJoined ? this.baseline.maxId : Math.max(this.maxSeenId, this.baseline.maxId);
@@ -269,12 +283,19 @@ export class SupabaseBackend implements ChatBackend {
   // ---------- Realtime ----------
 
   private subscribe(): void {
-    this.channel = this.client
+    // 被換掉的舊頻道晚到的狀態通知一律忽略,免得短暫出現「連線中斷」
+    let self: RealtimeChannel | null = null;
+    const stale = () => self !== null && this.channel !== self;
+    let ch = this.client
       .channel('campfire')
-      .on('system', {}, (payload: { extension?: string; status?: string }) => {
-        if (payload.extension !== 'postgres_changes') return;
+      .on('system', {}, (payload: { extension?: string; status?: string; message?: string }) => {
+        if (payload.extension !== 'postgres_changes' || stale()) return;
         if (payload.status === 'ok') this.onPgReady();
-        else if (payload.status === 'error') this.onPgDown();
+        else if (payload.status === 'error') {
+          // 被拒絕的原因是 room_away 不在推送名單裡:不要整個連線中斷,改成不監聽暫離重新訂閱
+          if (this.awayEnabled && typeof payload.message === 'string' && payload.message.includes('room_away')) this.resubscribeWithoutAway();
+          else this.onPgDown();
+        }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         if (isMessageRow(payload.new)) {
@@ -290,8 +311,31 @@ export class SupabaseBackend implements ChatBackend {
           const fire = toFire(payload.new);
           this.dispatch({ event: 'fire.changed', payload: fire, fireMs: Date.parse(fire.updatedAt) });
         }
-      })
-      .subscribe((status) => this.onChannelStatus(status));
+      });
+    if (this.awayEnabled) {
+      ch = ch.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'room_away' }, (payload) => {
+        // 暫離名單的資料也要先檢查,不合格的整筆丟掉
+        const away = parseAwayRow(payload.new);
+        if (away) this.dispatch({ event: 'away.changed', payload: { nicknames: away.nicknames }, awayVersion: away.version });
+      });
+    }
+    self = ch.subscribe((status) => {
+      if (!stale()) this.onChannelStatus(status);
+    });
+    this.channel = self;
+  }
+
+  private resubscribeWithoutAway(): void {
+    this.awayEnabled = false;
+    this.pgReady = false;
+    const old = this.channel;
+    this.channel = null;
+    try {
+      if (old) void this.client.removeChannel(old);
+    } catch {
+      // 舊頻道收不掉也沒關係
+    }
+    this.subscribe();
   }
 
   private onMessageRow(row: Parameters<typeof toMessage>[0]): void {
@@ -357,6 +401,7 @@ export class SupabaseBackend implements ChatBackend {
     for (const p of pending) {
       // 快照已經包含的事件不要重複發(訊息本身由畫面端用編號去重)
       if (p.event === 'fire.changed' && (p.fireMs ?? 0) <= this.baseline.fireMs) continue;
+      if (p.event === 'away.changed' && (p.awayVersion ?? -1) <= this.baseline.awayVersion) continue;
       if ((p.event === 'member.joined' || p.event === 'member.left') && (p.messageId ?? 0) <= this.baseline.maxId) continue;
       this.deliver(p);
     }

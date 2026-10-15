@@ -57,6 +57,8 @@ export class ChatStore {
   /** 加柴冷卻到這個(伺服器)時間為止 */
   stokeUntil = $state(0);
   soundOn = $state(local.get(SOUND_KEY) !== 'off');
+  /** 切換暫離的按鈕暫時不能按(防止連點;只是畫面上的小防護,不是任何規則) */
+  awayBusy = $state(false);
   /** 要求輸入框插入 @代號(點座位、點名單時使用) */
   mentionRequest = $state<{ nickname: string; n: number } | null>(null);
 
@@ -134,6 +136,11 @@ export class ChatStore {
     });
     b.on('fire.changed', (f) => {
       this.fire = f;
+    });
+    b.on('away.changed', ({ nicknames }) => {
+      if (this.phase !== 'room') return;
+      const keys = new Set(nicknames.map(nicknameKey));
+      this.members = this.members.map((m) => ({ ...m, away: keys.has(nicknameKey(m.nickname)) }));
     });
     b.on('connection.lost', () => {
       this.connection = 'offline';
@@ -308,6 +315,36 @@ export class ChatStore {
       const err = asChatError(e);
       if (err.code === 'FIRE_COOLDOWN') this.stokeUntil = this.serverNow() + (err.retryAfterMs ?? 1000);
       else if (err.code === 'NOT_JOINED') void this.resync();
+    }
+  }
+
+  /** 我現在是不是暫離中 */
+  get myAway(): boolean {
+    const me = this.me;
+    if (!me) return false;
+    return this.members.some((m) => nicknameKey(m.nickname) === nicknameKey(me) && m.away === true);
+  }
+
+  private setMemberAway(nickname: string, away: boolean): void {
+    this.members = this.members.map((m) => (nicknameKey(m.nickname) === nicknameKey(nickname) ? { ...m, away } : m));
+  }
+
+  /** 切換自己的「暫離一下」。畫面先立刻反應;伺服器失敗就還原。不產生系統訊息、不影響心跳。 */
+  async toggleAway(): Promise<void> {
+    const me = this.me;
+    if (!me || this.awayBusy || this.connection !== 'online' || this.phase !== 'room') return;
+    const was = this.myAway;
+    this.awayBusy = true;
+    this.setMemberAway(me, !was);
+    try {
+      await this.backend.setAway(!was);
+    } catch (e) {
+      this.setMemberAway(me, was);
+      if (asChatError(e).code === 'NOT_JOINED') void this.resync();
+    } finally {
+      window.setTimeout(() => {
+        this.awayBusy = false;
+      }, 800);
     }
   }
 

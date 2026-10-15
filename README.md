@@ -37,6 +37,8 @@
   (`src/shared/mention.ts`、`src/components/MentionMenu.svelte`、`src/lib/sound.ts`)
 - **http/https 安全連結**:只有 http、https 網址可以點,在新分頁開啟且不能控制原頁。
   (`src/shared/linkify.ts`、`src/components/MessageItem.svelte`)
+- **暫離一下**:線上名單裡可以切換自己的「暫離一下」,所有人在名單中看到該使用者旁邊顯示「暫離中」,再切換就恢復。只是顯示用的標記,不影響心跳與離開判定,也不產生系統訊息。
+  (`supabase/migrations/0006_away.sql`、`src/components/RosterPanel.svelte`、`src/components/Roster.svelte`、`src/backend/local/room.ts`)
 
 ## 在自己的電腦上執行
 

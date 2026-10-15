@@ -195,6 +195,31 @@ describe('冒煙測試:階段一的主要流程', () => {
     expect(document.documentElement.hasAttribute('data-dim')).toBe(true);
   });
 
+  it('暫離一下:從線上名單切換自己的暫離,名單與座位顯示「暫離中」,再切換就恢復,不產生系統訊息', async () => {
+    $('.count')!.click(); // 人數是按鈕,隨時可以開名單
+    await vi.waitFor(() => expect($('[role="dialog"]')).not.toBeNull());
+    const myRow = () => $$('[role="dialog"] .mrow').find((r) => (r.textContent ?? '').includes('你'))!;
+    const btn = () => myRow().querySelector<HTMLButtonElement>('.awaybtn')!;
+    expect(btn().textContent).toContain('暫離一下');
+    expect(myRow().querySelector('.away')).toBeNull();
+
+    btn().click();
+    await vi.waitFor(() => expect(myRow().querySelector('.away')).not.toBeNull());
+    expect(myRow().querySelector('.away')!.textContent).toBe('暫離中');
+    expect(btn().textContent).toContain('回來了');
+    expect($$('.seat').some((s) => (s.textContent ?? '').includes('Amy') && (s.textContent ?? '').includes('暫離中'))).toBe(true);
+    expect($$('.sys').some((s) => (s.textContent ?? '').includes('暫離'))).toBe(false);
+
+    await new Promise((r) => setTimeout(r, 900)); // 連點防護結束
+    btn().click();
+    await vi.waitFor(() => expect(myRow().querySelector('.away')).toBeNull());
+    expect(btn().textContent).toContain('暫離一下');
+    expect($$('.seat').some((s) => (s.textContent ?? '').includes('Amy') && (s.textContent ?? '').includes('暫離中'))).toBe(false);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await vi.waitFor(() => expect($('[role="dialog"]')).toBeNull());
+  });
+
   it('離開營火:回到輸入代號畫面,不再有變暗', async () => {
     byText('button', '關閉')!.click();
     byText('button', '離開營火')!.click();

@@ -17,6 +17,8 @@ export interface Message {
 export interface Member {
   nickname: string;
   joinedAt: string;
+  /** 是否暫離中(只是顯示用的標記,沒有任何伺服器強制的規則) */
+  away?: boolean;
 }
 
 export interface Fire {
@@ -48,6 +50,8 @@ export interface Snapshot {
   config: RoomConfig;
   me: { nickname: string } | null;
   members: Member[];
+  /** 暫離名單的版本(越新越大);用來判斷收到的暫離名單是不是比手上的舊。階段一的模擬後端沒有 */
+  awayVersion?: number;
   messages: Message[];
   fire: Fire;
 }
@@ -84,6 +88,8 @@ export interface BackendEvents {
   'member.joined': Member;
   'member.left': { nickname: string };
   'fire.changed': Fire;
+  /** 目前所有暫離中的人(完整名單,不是差異;重複收到也沒有關係) */
+  'away.changed': { nicknames: string[] };
   'connection.lost': undefined;
   /**
    * 連線恢復,或後端要求畫面「重新同步一次」(加入時推送還沒就緒、心跳發現漏了訊息)。
@@ -120,6 +126,8 @@ export interface ChatBackend {
   heartbeat(): Promise<void>;
   sendMessage(body: string): Promise<void>;
   stokeFire(): Promise<void>;
+  /** 切換自己的「暫離一下」狀態。不產生系統訊息,也不影響心跳與離開判定 */
+  setAway(away: boolean): Promise<void>;
   getSnapshot(): Promise<Snapshot>;
   on<K extends BackendEventName>(event: K, handler: (payload: BackendEvents[K]) => void): () => void;
 }

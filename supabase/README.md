@@ -25,6 +25,9 @@
 | 3 | `migrations/0003_messages.sql` | 送訊息(長度檢查、10 秒 5 則限制)、取得快照 |
 | 4 | `migrations/0004_fire.sql` | 營火加柴(5 秒冷卻) |
 | 5 | `migrations/0005_cron.sql` | 定時工作(刪除過期訊息、清除離線成員) |
+| 6 | `migrations/0006_away.sql` | 暫離一下(`members.away` 欄位、`room_away` 小表、`set_away` 函式) |
+
+⚠ **0006 要先貼、確認成功,再讓新版網頁上線。** 新版網頁會監聽 `room_away`;還沒執行 0006 就上線的話,網頁會自動退回「不監聽暫離」,聊天室其他功能照常,只是暫離功能暫時不能用。
 
 **每一份的操作都一樣:**
 
@@ -155,6 +158,54 @@ order by jobname;
 
 ---
 
+### 0006_away.sql 之後
+
+**檢查 1:新欄位、小表、權限**
+
+```sql
+select 'column members.away' as item, count(*)::text as value
+from information_schema.columns
+where table_schema = 'public' and table_name = 'members' and column_name = 'away'
+union all
+select 'room_away rows', count(*)::text from public.room_away
+union all
+select 'room_away rls on', rowsecurity::text from pg_tables where schemaname = 'public' and tablename = 'room_away'
+union all
+select 'room_away grant: ' || grantee || ' ' || privilege_type, 'granted'
+from information_schema.role_table_grants
+where table_schema = 'public' and table_name = 'room_away' and grantee in ('anon', 'authenticated')
+union all
+select 'realtime: ' || tablename, 'on'
+from pg_publication_tables
+where pubname = 'supabase_realtime' and schemaname = 'public'
+union all
+select 'function ' || proname || ' anon=' || has_function_privilege('anon', oid, 'execute')::text, 'authenticated=' || has_function_privilege('authenticated', oid, 'execute')::text
+from pg_proc
+where pronamespace = 'public'::regnamespace and proname in ('set_away', 'sync_room_away')
+order by 1;
+```
+
+應該看到 **9 列**:
+- `column members.away` → 1
+- `function set_away anon=false` → `authenticated=true`
+- `function sync_room_away anon=false` → `authenticated=false`(這是內部用的觸發器,瀏覽器不能呼叫)
+- `realtime: fire`、`realtime: messages`、`realtime: room_away`(**沒有** `members`)
+- `room_away grant: authenticated SELECT`(**只有這一列**,沒有 anon,沒有 INSERT、UPDATE、DELETE)
+- `room_away rls on` → true
+- `room_away rows` → 1
+
+**檢查 2:觸發器**
+
+```sql
+select tgname, tgenabled
+from pg_trigger
+where tgrelid = 'public.members'::regclass and not tgisinternal
+order by tgname;
+```
+
+應該看到 **2 列**:`members_away_changed`、`members_away_left`,`tgenabled` 都是 `O`。
+
+
 ## 全部貼完之後的總檢查
 
 1. 在 SQL Editor 貼上這段,**所有內部函式都應該是 false**:
@@ -168,12 +219,12 @@ where pronamespace = 'public'::regnamespace
 order by proname;
 ```
 
-應該看到 **12 列**(7 個給畫面用的 + 5 個內部用的)。其中**只有** `get_snapshot`、`heartbeat`、`join_room`、`leave_room`、`leave_soon`、`send_message`、`stoke_fire` 這 7 個的 `authenticated_can_run` 是 true;`build_snapshot`、`cleanup_members`、`cleanup_messages`、`nickname_key`、`to_iso` 這 5 個(內部用)和所有 `anon_can_run` 都必須是 false。
-(12 列是指你的專案 public 裡原本沒有別的函式。如果有其他不是我們建的,忽略即可。)
+應該看到 **14 列**(8 個給畫面用的 + 6 個內部用的)。其中**只有** `get_snapshot`、`heartbeat`、`join_room`、`leave_room`、`leave_soon`、`send_message`、`set_away`、`stoke_fire` 這 8 個的 `authenticated_can_run` 是 true;`build_snapshot`、`cleanup_members`、`cleanup_messages`、`nickname_key`、`sync_room_away`、`to_iso` 這 6 個(內部用)和所有 `anon_can_run` 都必須是 false。
+(14 列是指你的專案 public 裡原本沒有別的函式。如果有其他不是我們建的,忽略即可。)
 
-2. 到 **Database → Publications**,點 `supabase_realtime`,確認 `messages` 和 `fire` 是打開的,`members` 是關的。
+2. 到 **Database → Publications**,點 `supabase_realtime`,確認 `messages`、`fire` 和 `room_away` 是打開的,`members` 是關的。
 3. 到 **Integrations → Cron**(或 Jobs),確認看得到三個 `campfire-` 開頭的工作。
-4. 到 **Authentication → Policies**,確認 `messages` 和 `fire` 各有一條規則,`members`、`campfire_config` 沒有規則(代表瀏覽器完全不能碰)。
+4. 到 **Authentication → Policies**,確認 `messages`、`fire` 和 `room_away` 各有一條規則,`members`、`campfire_config` 沒有規則(代表瀏覽器完全不能碰)。
 
 ---
 
@@ -218,5 +269,6 @@ SQL 與這份 README 只描述「規則」,不含任何與你的專案綁在一�
 | 加柴 5 秒冷卻 | `0004_fire.sql` |
 | 代號唯一(大小寫視為同一個)、代號規則 | `0001_schema.sql`(唯一限制)+ `0002_membership.sql`(規則與衝突判斷) |
 | 離開判定(30 秒沒心跳、通知離開後 10 秒緩衝) | `0002_membership.sql` + `0005_cron.sql`(定時清除) |
-| 瀏覽器不能直接寫入任何資料表 | `0001_schema.sql` |
+| 瀏覽器不能直接寫入任何資料表 | `0001_schema.sql`、`0006_away.sql`(`room_away` 同樣只能讀) |
+| 暫離一下(只是顯示用的標記,**沒有任何伺服器強制的規則**) | `0006_away.sql` |
 | 發言者代號由伺服器查出來、內容只當純文字 | `0003_messages.sql` |

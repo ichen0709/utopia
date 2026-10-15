@@ -39,6 +39,7 @@ function botRow(name: string, now: number, joinedAt = now): MemberRow {
     lastBeatAt: now,
     leavingAt: null,
     isBot: true,
+    away: false,
   };
 }
 
@@ -108,6 +109,15 @@ export function botStep(db: LocalDb, now: number, cfg: RoomConfig, rng: () => nu
     const humans = db.members.filter((m) => !m.isBot);
     const target = humans.length && rng() < 0.15 ? pick(humans, rng).nickname : null;
     botSpeak(db, now, cfg, target, rng);
+  }
+
+  // 夥伴偶爾也會暫離一下又回來(讓一個人打開示範頁面時,也看得到「暫離中」)
+  if (rng() < 1 / 100) {
+    const bots = db.members.filter((m) => m.isBot && m.nickname !== ROAMER);
+    if (bots.length) {
+      const b = pick(bots, rng);
+      b.away = !b.away;
+    }
   }
 
   // 夥伴很少救火,否則營火永遠不會熄

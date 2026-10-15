@@ -8,11 +8,17 @@
   let {
     members,
     me,
+    awayBusy,
+    canToggleAway,
+    ontoggleaway,
     onpick,
     onclose,
   }: {
     members: Member[];
     me: string | null;
+    awayBusy: boolean;
+    canToggleAway: boolean;
+    ontoggleaway: () => void;
     onpick: (nickname: string) => void;
     onclose: () => void;
   } = $props();
@@ -50,7 +56,7 @@
       <svg class="ic" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>
     </button>
   </div>
-  <div class="tip">點一下代號,就會在輸入框 @ 他</div>
+  <div class="tip">點一下代號,就會在輸入框 @ 他;要離開一下,按你那一列的「暫離一下」</div>
   <ul class="list">
     {#each ordered as m (m.nickname)}
       <li>
@@ -58,12 +64,21 @@
           <div class="mrow">
             <span class="av c{colorIndex(m.nickname)}"><svg viewBox="0 0 28 28" width="20" height="20" aria-hidden="true"><circle cx="14" cy="9.5" r="5.2" /><path d="M3.5 26c0-6 4.5-9.5 10.5-9.5S24.5 20 24.5 26z" /></svg></span>
             <b class="c{colorIndex(m.nickname)}">{m.nickname}</b>
+            {#if m.away}<span class="away">暫離中</span>{/if}
+            <button
+              class="awaybtn"
+              type="button"
+              aria-pressed={m.away === true}
+              disabled={awayBusy || !canToggleAway}
+              onclick={ontoggleaway}
+            >{m.away ? '回來了' : '暫離一下'}</button>
             <span class="you">你</span>
           </div>
         {:else}
           <button class="mrow pick" type="button" onclick={() => onpick(m.nickname)}>
             <span class="av c{colorIndex(m.nickname)}"><svg viewBox="0 0 28 28" width="20" height="20" aria-hidden="true"><circle cx="14" cy="9.5" r="5.2" /><path d="M3.5 26c0-6 4.5-9.5 10.5-9.5S24.5 20 24.5 26z" /></svg></span>
             <b class="c{colorIndex(m.nickname)}">{m.nickname}</b>
+            {#if m.away}<span class="away">暫離中</span>{/if}
           </button>
         {/if}
       </li>
@@ -173,6 +188,38 @@
   }
   .av svg {
     fill: currentColor;
+  }
+  .away {
+    flex: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--soft);
+    border: 1px dashed var(--muted);
+    border-radius: 9px;
+    padding: 1px 8px;
+  }
+  .awaybtn {
+    margin-left: auto;
+    flex: none;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 14px 16px 14px 16px;
+    border: 1.5px solid var(--amber);
+    background: var(--surface2);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .awaybtn[aria-pressed='true'] {
+    background: var(--amber);
+    color: var(--onamber);
+  }
+  .awaybtn:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .awaybtn + .you {
+    margin-left: 0;
   }
   .you {
     margin-left: auto;

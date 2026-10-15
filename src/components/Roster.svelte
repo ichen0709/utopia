@@ -33,17 +33,19 @@
       .filter((m) => !me || nicknameKey(m.nickname) !== nicknameKey(me))
       .sort((a, b) => Date.parse(a.joinedAt) - Date.parse(b.joinedAt)),
   );
+  const meAway = $derived(!!me && members.some((m) => nicknameKey(m.nickname) === nicknameKey(me) && m.away === true));
   const seated = $derived(others.slice(0, SEAT_COUNT - 1));
   const extra = $derived(Math.max(0, others.length - seated.length));
 </script>
 
 {#if me}
   <div class="seat" style:left="{SELF_SLOT.x - 32}px" style:top="{SELF_SLOT.y - 22}px">
-    <span class="sw you c{colorIndex(me)}">
+    <span class="sw you c{colorIndex(me)}" class:away={meAway}>
       <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true"><circle cx="14" cy="9.5" r="5.2" /><path d="M3.5 26c0-6 4.5-9.5 10.5-9.5S24.5 20 24.5 26z" /></svg>
       <span class="youtag">你</span>
     </span>
     <span class="sn">{me}</span>
+    {#if meAway}<span class="awaytag">暫離中</span>{/if}
   </div>
 {/if}
 
@@ -56,10 +58,11 @@
     aria-label="對 {m.nickname} 說話(在輸入框插入 @{m.nickname})"
     onclick={() => onmention(m.nickname)}
   >
-    <span class="sw c{colorIndex(m.nickname)}">
+    <span class="sw c{colorIndex(m.nickname)}" class:away={m.away === true}>
       <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true"><circle cx="14" cy="9.5" r="5.2" /><path d="M3.5 26c0-6 4.5-9.5 10.5-9.5S24.5 20 24.5 26z" /></svg>
     </span>
     <span class="sn">{m.nickname}</span>
+    {#if m.away}<span class="awaytag">暫離中</span>{/if}
   </button>
 {/each}
 
@@ -96,6 +99,21 @@
   }
   .sw svg {
     fill: currentColor;
+  }
+  /* 暫離中:圖示變淡,名字下面多一個「暫離中」標籤 */
+  .sw.away {
+    opacity: 0.5;
+  }
+  .awaytag {
+    margin-top: -1px;
+    padding: 1px 6px;
+    font-size: 11px;
+    line-height: 1.3;
+    border-radius: 8px;
+    background: rgba(23, 30, 56, 0.92);
+    border: 1px solid #6a77a8;
+    color: #f4ead6;
+    white-space: nowrap;
   }
   .sw.you {
     box-shadow:
